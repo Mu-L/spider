@@ -18,6 +18,12 @@ pub enum RedirectPolicy {
     Strict,
 }
 
+#[cfg(not(feature = "regex"))]
+type AllowList = Box<Vec<CompactString>>;
+
+#[cfg(feature = "regex")]
+type AllowList = Box<regex::RegexSet>;
+
 /// Structure to configure `Website` crawler
 /// ```rust
 /// use spider::website::Website;
@@ -37,6 +43,8 @@ pub struct Configuration {
     pub tld: bool,
     /// List of pages to not crawl. [optional: regex pattern matching]
     pub blacklist_url: Option<Box<Vec<CompactString>>>,
+    /// List of pages to only crawl. [optional: regex pattern matching]
+    pub whitelist_url: Option<Box<Vec<CompactString>>>,
     /// User-Agent for request.
     pub user_agent: Option<Box<CompactString>>,
     /// Polite crawling delay in milli seconds.
@@ -68,10 +76,8 @@ pub struct Configuration {
     #[cfg(feature = "cron")]
     /// The type of cron to run either crawl or scrape.
     pub cron_type: CronType,
-    #[cfg(feature = "budget")]
     /// The max depth to crawl for a website.
     pub depth: usize,
-    #[cfg(feature = "budget")]
     /// The depth to crawl pertaining to the root.
     pub depth_distance: usize,
     /// Cache the page following HTTP caching rules.
@@ -98,10 +104,8 @@ pub struct Configuration {
     /// Set a custom script to eval on each new document. This does nothing without the flag `chrome` enabled.
     #[cfg(feature = "chrome")]
     pub evaluate_on_new_document: Option<Box<String>>,
-    #[cfg(feature = "budget")]
     /// Crawl budget for the paths. This helps prevent crawling extra pages and limiting the amount.
     pub budget: Option<hashbrown::HashMap<case_insensitive_string::CaseInsensitiveString, u32>>,
-    #[cfg(feature = "budget")]
     /// If wild card budgeting is found for the website.
     pub wild_card_budgeting: bool,
     /// External domains to include case-insensitive.
@@ -127,17 +131,27 @@ pub struct Configuration {
     /// The chrome connection url. Useful for targeting different headless instances. Defaults to using the env CHROME_URL.
     #[cfg(feature = "chrome")]
     pub chrome_connection_url: Option<String>,
+    /// Use a shared queue strategy when crawling. This can scale workloads evenly that do not need priority.
+    pub shared_queue: bool,
+    /// The blacklist urls.
+    blacklist: AllowList,
+    /// The whitelist urls.
+    whitelist: AllowList,
 }
 
 /// Get the user agent from the top agent list randomly.
 #[cfg(any(feature = "ua_generator"))]
-pub fn get_ua() -> &'static str {
-    ua_generator::ua::spoof_ua()
+pub fn get_ua(chrome: bool) -> &'static str {
+    if chrome {
+        ua_generator::ua::spoof_chrome_ua()
+    } else {
+        ua_generator::ua::spoof_ua()
+    }
 }
 
 /// Get the user agent via cargo package + version.
 #[cfg(not(any(feature = "ua_generator")))]
-pub fn get_ua() -> &'static str {
+pub fn get_ua(_chrome: bool) -> &'static str {
     use std::env;
 
     lazy_static! {
@@ -189,6 +203,53 @@ impl Configuration {
     pub fn get_blacklist(&self) -> Box<Vec<CompactString>> {
         match &self.blacklist_url {
             Some(blacklist) => blacklist.to_owned(),
+            _ => Default::default(),
+        }
+    }
+
+    /// Set the blacklist
+    pub(crate) fn set_blacklist(&mut self) {
+        self.blacklist = self.get_blacklist();
+    }
+
+    /// Set the whitelist
+    pub(crate) fn set_whitelist(&mut self) {
+        self.whitelist = self.get_whitelist();
+    }
+
+    /// Configure the allow list.
+    pub(crate) fn configure_allowlist(&mut self) {
+        self.set_whitelist();
+        self.set_blacklist();
+    }
+
+    /// Get the blacklist compiled.
+    pub(crate) fn get_blacklist_compiled(&self) -> &AllowList {
+        &self.blacklist
+    }
+
+    /// Get the whitelist compiled.
+    pub(crate) fn get_whitelist_compiled(&self) -> &AllowList {
+        &self.whitelist
+    }
+
+    #[cfg(feature = "regex")]
+    /// Compile the regex for the whitelist.
+    pub fn get_whitelist(&self) -> Box<regex::RegexSet> {
+        match &self.whitelist_url {
+            Some(whitelist) => match regex::RegexSet::new(&**whitelist) {
+                Ok(s) => Box::new(s),
+                _ => Default::default(),
+            },
+            _ => Default::default(),
+        }
+    }
+
+    #[cfg(not(feature = "regex"))]
+    /// Handle the whitelist options.
+    pub fn get_whitelist(&self) -> Box<Vec<CompactString>> {
+        match &self.whitelist_url {
+            Some(whitelist) => whitelist.to_owned(),
             _ => Default::default(),
         }
     }
@@ -324,6 +385,12 @@ impl Configuration {
         self
     }
 
+    /// Use a shared semaphore to evenly handle workloads. The default is false.
+    pub fn with_shared_queue(&mut self, shared_queue: bool) -> &mut Self {
+        self.shared_queue = shared_queue;
+        self
+    }
+
     /// Add blacklist urls to ignore.
     pub fn with_blacklist_url<T>(&mut self, blacklist_url: Option<Vec<T>>) -> &mut Self
     where
@@ -332,6 +399,18 @@ impl Configuration {
         match blacklist_url {
             Some(p) => self.blacklist_url = Some(Box::new(p.into())),
             _ => self.blacklist_url = None,
+        };
+        self
+    }
+
+    /// Add whitelist urls to allow.
+    pub fn with_whitelist_url<T>(&mut self, whitelist_url: Option<Vec<T>>) -> &mut Self
+    where
+        Vec<CompactString>: From<Vec<T>>,
+    {
+        match whitelist_url {
+            Some(p) => self.whitelist_url = Some(Box::new(p.into())),
+            _ => self.whitelist_url = None,
         };
         self
     }
@@ -377,16 +456,9 @@ impl Configuration {
         self
     }
 
-    #[cfg(feature = "budget")]
     /// Set a crawl page limit. If the value is 0 there is no limit. This does nothing without the feat flag `budget` enabled.
     pub fn with_limit(&mut self, limit: u32) -> &mut Self {
         self.with_budget(Some(hashbrown::HashMap::from([("*", limit)])));
-        self
-    }
-
-    #[cfg(not(feature = "budget"))]
-    /// Set a crawl page limit. If the value is 0 there is no limit. This does nothing without the feat flag `budget` enabled.
-    pub fn with_limit(&mut self, _limit: u32) -> &mut Self {
         self
     }
 
@@ -428,16 +500,9 @@ impl Configuration {
         self
     }
 
-    #[cfg(feature = "budget")]
     /// Set a crawl depth limit. If the value is 0 there is no limit. This does nothing without the feat flag `budget` enabled.
     pub fn with_depth(&mut self, depth: usize) -> &mut Self {
         self.depth = depth;
-        self
-    }
-
-    #[cfg(not(feature = "budget"))]
-    /// Set a crawl depth limit. If the value is 0 there is no limit. This does nothing without the feat flag `budget` enabled.
-    pub fn with_depth(&mut self, _depth: usize) -> &mut Self {
         self
     }
 
@@ -593,7 +658,6 @@ impl Configuration {
         self
     }
 
-    #[cfg(feature = "budget")]
     /// Set a crawl budget per path with levels support /a/b/c or for all paths with "*". This does nothing without the `budget` flag enabled.
     pub fn with_budget(&mut self, budget: Option<hashbrown::HashMap<&str, u32>>) -> &mut Self {
         self.budget = match budget {
@@ -614,12 +678,6 @@ impl Configuration {
             }
             _ => None,
         };
-        self
-    }
-
-    #[cfg(not(feature = "budget"))]
-    /// Set a crawl budget per path with levels support /a/b/c or for all paths with "*". This does nothing without the `budget` flag enabled.
-    pub fn with_budget(&mut self, _budget: Option<hashbrown::HashMap<&str, u32>>) -> &mut Self {
         self
     }
 

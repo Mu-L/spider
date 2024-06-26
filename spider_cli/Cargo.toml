@@ -1,6 +1,6 @@
 [package]
 name = "spider_cli"
-version = "1.95.27"
+version = "1.98.3"
 authors = [
     "j-mendez <jeff@a11ywatch.com>"
 ]
@@ -20,7 +20,7 @@ maintenance = { status = "as-is" }
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-env_logger = "0.11.3"
+env_logger = "0.11"
 serde_json = "1"
 
 [build-dependencies]
@@ -28,7 +28,7 @@ quote = "1"
 failure_derive = "0.1.8"
 
 [dependencies.spider]
-version = "1.95.27"
+version = "1.98.3"
 path = "../spider"
 
 [[bin]]
@@ -37,9 +37,10 @@ path = "src/main.rs"
 doc = false
 
 [features]
-default = ["spider/budget"]
+default = []
 jemalloc = ["spider/jemalloc"]
 regex = ["spider/regex"]
 full_resources = ["spider/full_resources"]
 chrome_intercept = ["spider/chrome_intercept"]
 chrome = ["spider/chrome"]
+smart = ["spider/smart"]

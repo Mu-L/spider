@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.98.0
+
+1. feat(whitelist): whitelist routes to only crawl.
+
 ## v1.85.0
 
 1. feat(openai): use OpenAI to dynamically drive the browser.

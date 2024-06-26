@@ -1,6 +1,6 @@
 [package]
 name = "spider_examples"
-version = "1.93.40"
+version = "1.98.3"
 authors = [
     "j-mendez <jeff@a11ywatch.com>",
 ]
@@ -58,6 +58,11 @@ path = "subscribe.rs"
 required-features = ["spider/sync"]
 
 [[example]]
+name = "loop"
+path = "loop.rs"
+required-features = ["spider/sync", "spider/smart"]
+
+[[example]]
 name = "cache"
 path = "cache.rs"
 required-features = ["spider/sync", "spider/cache"]
@@ -86,14 +91,22 @@ name = "configuration"
 path = "configuration.rs"
 
 [[example]]
+name = "blacklist"
+path = "blacklist.rs"
+
+[[example]]
+name = "whitelist"
+path = "whitelist.rs"
+
+[[example]]
 name = "budget"
 path = "budget.rs"
-required-features = ["spider/budget", "spider/sync"]
+required-features = ["spider/sync"]
 
 [[example]]
 name = "depth"
 path = "depth.rs"
-required-features = ["spider/budget", "spider/sync"]
+required-features = ["spider/sync"]
 
 [[example]]
 name = "cron"
